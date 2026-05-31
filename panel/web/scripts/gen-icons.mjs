@@ -56,15 +56,14 @@ function makePng(size) {
   const stroke = (7.5 / 2) * s; // 笔画半宽
   // 提示符坐标（基于 100 视图）
   const chevron = [
-    [34, 30],
-    [48, 44],
-    [34, 58],
+    [28, 24],
+    [42, 38],
+    [28, 52],
   ].map(([x, y]) => [x * s, y * s]);
   const underline = [
-    [56, 60],
-    [72, 60],
+    [50, 54],
+    [66, 54],
   ].map(([x, y]) => [x * s, y * s]);
-  const dot = [22 * s, 36 * s, 3.4 * s]; // cx, cy, r
 
   const inRounded = (x, y) => {
     const r = radius;
@@ -93,7 +92,6 @@ function makePng(size) {
       cov = Math.max(cov, clamp01(stroke - distToSeg(gx, gy, chevron[0][0], chevron[0][1], chevron[1][0], chevron[1][1]) + 0.5));
       cov = Math.max(cov, clamp01(stroke - distToSeg(gx, gy, chevron[1][0], chevron[1][1], chevron[2][0], chevron[2][1]) + 0.5));
       cov = Math.max(cov, clamp01(stroke - distToSeg(gx, gy, underline[0][0], underline[0][1], underline[1][0], underline[1][1]) + 0.5));
-      cov = Math.max(cov, clamp01(dot[2] - Math.hypot(gx - dot[0], gy - dot[1]) + 0.5));
 
       const o = y * rowLen + 1 + x * 4;
       raw[o] = Math.round(bg[0] + (WHITE[0] - bg[0]) * cov);
