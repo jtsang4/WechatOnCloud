@@ -176,16 +176,10 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
     // 「重新连接」按钮与「重启实例」后的重连同样走整页重载（见 restartInstance / 桌面无响应面板）。
     window.location.reload();
   };
-  // 声音（扬声器）开关，默认关。1.1.7 本就没有音频桥、连接很稳；音频是经一条额外 socket.io 连到实例 kclient，
-  // 为排除它对连接稳定性的影响、并回到 1.1.7 的连接行为，默认不连音频桥；想听声音再开（开关进 effect 依赖，
-  // 关→断开音频桥，开→建立）。
-  const [soundOn, setSoundOn] = useState(() => {
-    try {
-      return window.localStorage.getItem('woc_sound_on') === '1';
-    } catch {
-      return false;
-    }
-  });
+  // 声音（扬声器）开关：每次打开实例都默认【关】，不持久化 on 状态（用户要求）。音频桥是额外一条到 kclient
+  // 的 socket.io，蓝牙外放(AirPods)等场景交互较敏感，默认关最稳、最可预期；想听声音手动开即可（开→建立音频桥，
+  // 关→断开）。开了之后在桌面上点一下即可解挂起出声（见下方 resumePlayback 的 iframe 手势监听）。
+  const [soundOn, setSoundOn] = useState(false);
   const toggleSound = () => {
     const v = !soundOn;
     setSoundOn(v);
@@ -423,6 +417,30 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showVnc, id, soundOn]);
+
+  // 让「点桌面画面」也能解挂起音频出声：浏览器自动播放策略会挂起 AudioContext，需用户手势恢复；但音频桥
+  // 的手势监听绑在父窗口上，而用户点的是同源 iframe 内的桌面，事件不冒泡到父窗口 → 故"点画面没用、得重开声音
+  // 开关"。这里在 iframe 内补一个手势监听，点桌面/按键即转调 resumePlayback() 恢复播放。
+  useEffect(() => {
+    if (!showVnc || !id || !soundOn || !frameLoaded) return;
+    const win = frameRef.current?.contentWindow;
+    if (!win) return;
+    const onGesture = () => audioRef.current?.resumePlayback();
+    try {
+      win.addEventListener('pointerdown', onGesture, true);
+      win.addEventListener('keydown', onGesture, true);
+    } catch {
+      return;
+    }
+    return () => {
+      try {
+        win.removeEventListener('pointerdown', onGesture, true);
+        win.removeEventListener('keydown', onGesture, true);
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [showVnc, id, soundOn, frameLoaded]);
 
   // 致命崩溃自愈：仅在 KasmVNC 真的弹出致命错误浮层时触发——整页重载是干净重连的唯一可靠路径
   // （旧 ws 已死，重载后干净重连；与 setMode/restartInstance 同理，不会引发新旧 ws 并存卡死 Xvnc）。
@@ -865,7 +883,7 @@ export default function InstanceView({ onOpenMenu }: { onOpenMenu: () => void })
               <div className="spinner" />
               <div className="iv-loading-text">正在连接桌面…</div>
               <div className="iv-loading-sub">{profile.enterHint}</div>
-              <div className="iv-loading-sub">拖文件到此处即可上传；声音自动开启，点一下画面即可出声</div>
+              <div className="iv-loading-sub">拖文件到此处即可上传；需要声音点顶部「声音」开启，再在画面上点一下即出声</div>
               {!window.isSecureContext && (
                 <div className="iv-loading-warn">当前非 HTTPS 访问，浏览器将禁用麦克风与摄像头（音频播放不受影响）</div>
               )}
