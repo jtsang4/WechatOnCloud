@@ -16,11 +16,20 @@ ENV DEBIAN_FRONTEND=noninteractive
 # 版本号），并跑通 doc/dev/发布门禁.md 的全部探针后才允许合并。
 ARG CHROMIUM_SNAPSHOT=20260704T180435Z
 ARG CHROMIUM_VERSION=149.0.7827.196-1~deb12u1
-# 单层完成所有 apt 安装（此前拆成两层 → 两次 apt-get update；在 CI 的 QEMU arm64 模拟下第二次
-# update 处理全部源时 OOM "Cannot allocate memory"，实例镜像发不出去）。合并为一次 update + 一次
-# install，并在装完立刻移除 snapshot 源，避免后续 apt 再去慢速快照站；Languages=none 跳过翻译文件、
-# Retries 抗网络抖动——共同把 QEMU 下的内存/网络压力降到最低。
+# ⚠️ CI 的 QEMU arm64 模拟下 apt-get update OOM（"Cannot allocate memory"，触发点是解析
+# download.docker.com InRelease）导致实例镜像发不出去。根因是 apt 要解析一大堆【构建根本用不到】
+# 的源（deb-src 源码索引、backports、docker、nodesource），内存峰值在模拟环境里爆掉。
+# 对策：构建期把 apt 源精简到只剩「debian main/updates/security（仅二进制）+ chromium 锚定快照」，
+# 装完再原样恢复；合并为单次 update+install；Languages=none 跳翻译、Retries 抗抖动。三管齐下从根上消除 OOM。
 RUN set -eux; \
+    mkdir -p /woc-apt-bak; \
+    cp -a /etc/apt/sources.list /woc-apt-bak/; \
+    mv /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/nodesource.list /woc-apt-bak/ 2>/dev/null || true; \
+    { \
+      echo "deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware"; \
+      echo "deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware"; \
+      echo "deb http://security.debian.org/debian-security/ bookworm-security main contrib non-free non-free-firmware"; \
+    } > /etc/apt/sources.list; \
     echo "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/${CHROMIUM_SNAPSHOT}/ bookworm-security main" \
       > /etc/apt/sources.list.d/woc-chromium-pin.list; \
     printf 'Package: chromium*\nPin: version %s\nPin-Priority: 1001\n' "${CHROMIUM_VERSION}" \
@@ -42,6 +51,9 @@ RUN set -eux; \
         libxcomposite1 libxrandr2 libxfixes3 libxtst6 libxshmfence1 libdrm2; \
     chromium --version; \
     rm -f /etc/apt/sources.list.d/woc-chromium-pin.list /etc/apt/preferences.d/woc-chromium-pin; \
+    mv /woc-apt-bak/sources.list /etc/apt/sources.list; \
+    mv /woc-apt-bak/docker.list /woc-apt-bak/nodesource.list /etc/apt/sources.list.d/ 2>/dev/null || true; \
+    rm -rf /woc-apt-bak; \
     sed -i 's/# zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen; \
     locale-gen; \
     apt-get clean; \
